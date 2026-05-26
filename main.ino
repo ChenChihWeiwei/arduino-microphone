@@ -59,12 +59,9 @@ void loop() {
   outVol3 = constrain(outVol3, 0, 100);
 
   // 用逗號分隔輸出三個麥克風的值 (格式如：52,38,15)
-  Serial.print("mic1 ");
   Serial.print(outVol1);
   Serial.print(",");
-  Serial.print("mic2 ");
   Serial.print(outVol2);
   Serial.print(",");
-  Serial.print("mic3 ");
   Serial.println(outVol3); // 最後一個用 println 來換行
 }
