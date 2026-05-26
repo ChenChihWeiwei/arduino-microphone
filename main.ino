@@ -7,22 +7,35 @@ const int sampleWindow = 50;   // 採樣時間窗口 (ms)
 // 【校正參數】可依實際狀況調整
 const int maxRawVolume = 1023; 
 
+// --- 新增：用於維持數值 0.5 秒的變數 ---
+const unsigned long holdTime = 500; // 維持時間 500 毫秒
+
+int peakVol1 = 0; unsigned long holdStart1 = 0;
+int peakVol2 = 0; unsigned long holdStart2 = 0;
+int peakVol3 = 0; unsigned long holdStart3 = 0;
+
 void setup() {
-  Serial.begin(9600); 
+  Serial.begin(115200); // 建議維持 115200 傳輸更即時，若非得用 9600 再自行改回
 }
 
 void loop() {
-  unsigned long startMillis = millis(); 
+  unsigned long currentMillis = millis();
+  unsigned long startMillis = currentMillis; 
   
   int signalMax1 = 0; int signalMin1 = 1024;
   int signalMax2 = 0; int signalMin2 = 1024;
-  int signalMax3 = 0; int signalMin3 = 1024; // 新增麥克風 3 的極值
+  int signalMax3 = 0; int signalMin3 = 1024;
 
   // 在同一個時間窗口內，同時對三組麥克風進行高速採樣
   while (millis() - startMillis < sampleWindow) {
     int val1 = analogRead(micPin1);
+    
+    // 加上空讀與 A/D 切換穩定（前一版優化的部分，讓訊號更獨立）
+    analogRead(micPin2);
     int val2 = analogRead(micPin2);
-    int val3 = analogRead(micPin3); // 讀取 A2
+    
+    analogRead(micPin3);
+    int val3 = analogRead(micPin3); 
     
     if (val1 < 1024) {
       if (val1 > signalMax1) signalMax1 = val1;
@@ -32,7 +45,6 @@ void loop() {
       if (val2 > signalMax2) signalMax2 = val2;
       if (val2 < signalMin2) signalMin2 = val2;
     }
-    // 處理麥克風 3
     if (val3 < 1024) {
       if (val3 > signalMax3) signalMax3 = val3;
       if (val3 < signalMin3) signalMin3 = val3;
@@ -41,7 +53,7 @@ void loop() {
 
   int volume1 = signalMax1 - signalMin1;
   int volume2 = signalMax2 - signalMin2;
-  int volume3 = signalMax3 - signalMin3; // 計算麥克風 3 的音量
+  int volume3 = signalMax3 - signalMin3;
 
   // 噪音過濾
   if (volume1 <= noiseThreshold) volume1 = 0;
@@ -58,10 +70,39 @@ void loop() {
   outVol2 = constrain(outVol2, 0, 100);
   outVol3 = constrain(outVol3, 0, 100);
 
-  // 用逗號分隔輸出三個麥克風的值 (格式如：52,38,15)
-  Serial.print(outVol1);
+  // ==========================================
+  // 核心修改：0.5秒 峰值維持 (Peak Hold) 邏輯
+  // ==========================================
+  currentMillis = millis(); // 更新目前時間
+
+  // --- 麥克風 1 持續時間判斷 ---
+  if (outVol1 >= peakVol1) {
+    peakVol1 = outVol1;       // 如果新數值更大或相等，更新最大值
+    holdStart1 = currentMillis; // 重新計算 0.5 秒的起點
+  } else if (currentMillis - holdStart1 >= holdTime) {
+    peakVol1 = outVol1;       // 超過 0.5 秒了，掉回目前較低的實際數值
+  }
+
+  // --- 麥克風 2 持續時間判斷 ---
+  if (outVol2 >= peakVol2) {
+    peakVol2 = outVol2;
+    holdStart2 = currentMillis;
+  } else if (currentMillis - holdStart2 >= holdTime) {
+    peakVol2 = outVol2;
+  }
+
+  // --- 麥克風 3 持續時間判斷 ---
+  if (outVol3 >= peakVol3) {
+    peakVol3 = outVol3;
+    holdStart3 = currentMillis;
+  } else if (currentMillis - holdStart3 >= holdTime) {
+    peakVol3 = outVol3;
+  }
+
+  // 用逗號分隔輸出三個麥克風【維持後】的值
+  Serial.print(peakVol1);
   Serial.print(",");
-  Serial.print(outVol2);
+  Serial.print(peakVol2);
   Serial.print(",");
-  Serial.println(outVol3); // 最後一個用 println 來換行
+  Serial.println(peakVol3); 
 }
